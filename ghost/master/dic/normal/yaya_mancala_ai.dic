@@ -1,0 +1,456 @@
+// マンカラのAI
+//
+// うかマンカラ台プロトコル（own_ai）向けの思考ルーチン。
+// αβ法によるミニマックス探索で着手を決定する。
+//
+// 盤面はプロトコル定義の絶対インデックスで扱う:
+//   0〜5  : 先手(first)の小穴   /  6 : 先手のストア
+//   7〜12 : 後手(second)の小穴  / 13 : 後手のストア
+//
+// 「player」は手番側を表す内部表現:
+//   0 = 先手(first)  / 1 = 後手(second)
+//
+// 自分がどちらの手番かは MancalaAI.myplayer に保持する
+// （OnMancalaGameStart で設定）。
+//
+// ★ YAYA実装方針:
+//   簡易配列（数値配列 IARRAY）を関数引数や戻り値でやりとりすると
+//   要素が展開されて壊れる。これを完全に回避するため、盤面は終始
+//   「カンマ区切り文字列」のまま保持し、要素アクセスは簡易配列の
+//   デリミタ付き添字（デフォルトデリミタ=カンマ）で行う:
+//       _board[i]        … i番目の石数（文字列で返るので比較/計算時は TOINT）
+//       _board[i] = 値   … i番目を更新
+//   盤面は常に14要素固定なので添字 0〜13 を直接扱う。
+
+//========================================
+// 定数・設定
+//========================================
+
+// 探索の深さ（手数。大きいほど強いが遅い）。
+MancalaAI.SearchDepth
+{
+	5
+}
+
+//========================================
+// 公開API（menu.dic の OnMancalaStateUpdate から呼ぶ）
+//========================================
+//
+// 使い方（menu.dic 側）:
+//   OnMancalaGameStart で先後を記憶:
+//       MancalaAI.myplayer = (reference[0] == 'second') ? 1 : 0
+//   OnMancalaStateUpdate で your_turn / your_bonus_turn のとき:
+//       MancalaAI.Think(reference[0])  を出力に含める
+//       → 着手すべき穴へ \![raiseother,...,OnMancalaMove,...] を返す
+//
+// イベント関数(OnMancala*)はこの辞書に置かず、フックは menu.dic に一本化する。
+
+// 盤面文字列を受け取り、最善手への着手さくらスクリプトを返す。
+// 合法手が無い／盤面不正のときは空文字を返す。
+// _argv[0] : 盤面文字列（カンマ区切り14穴）
+MancalaAI.Think
+{
+	_me = MancalaAI.myplayer
+	if GETTYPE(_me) != 1 {
+		_me = 0
+	}
+
+	_bstr = _argv[0]
+
+	_move = MancalaAI.DecideMove(_bstr, _me)
+	if _move < 0 {
+		''
+		return
+	}
+
+	// 仕様: R0=自分のゴースト名（参加時と同じ）, R1=着手する穴インデックス
+	"\![raiseother,うかマンカラ,OnMancalaMove,うかマンカラをやるアメジスト,%(_move)]"
+}
+
+//========================================
+// 着手決定（探索のエントリポイント）
+//========================================
+
+// _argv[0] : 盤面文字列
+// _argv[1] : 自分のplayer(0/1)
+// 戻り値   : 着手する穴インデックス（合法手なし時 -1）
+MancalaAI.DecideMove
+{
+	_bstr = _argv[0]
+	_me = _argv[1]
+
+	_moves = MancalaAI.LegalMoves(_bstr, _me)
+	_nmoves = ARRAYSIZE(_moves)
+	if _nmoves == 0 {
+		-1
+		return
+	}
+
+	_bestscore = -1000000
+	_bestmove = _moves[0]
+	_depth = MancalaAI.SearchDepth()
+
+	for _i=0; _i<_nmoves; _i++ {
+		_pit = _moves[_i]
+
+		// 着手をシミュレート。ApplyMove は盤面文字列を返し、
+		// 連続手番フラグ・次手番player はグローバル変数に書く。
+		_nextstr = MancalaAI.ApplyMove(_bstr, _pit, _me)
+		_again = MancalaAI._again
+		_nextplayer = MancalaAI._nextplayer
+
+		// _score は if の外（forブロック直下）で宣言しておく
+		_score = 0
+		if MancalaAI.IsGameOver(_nextstr) {
+			_score = MancalaAI.EvalFinal(_nextstr, _me)
+		}
+		elseif _again {
+			// 連続手番：自分の手番のまま、深さは消費する
+			_score = MancalaAI.AlphaBeta(_nextstr, _me, _me, _depth-1, -1000000, 1000000)
+		}
+		else {
+			_score = MancalaAI.AlphaBeta(_nextstr, _nextplayer, _me, _depth-1, -1000000, 1000000)
+		}
+
+		if _score > _bestscore {
+			_bestscore = _score
+			_bestmove = _pit
+		}
+	}
+
+	_bestmove
+	return
+}
+
+//========================================
+// αβ探索
+//========================================
+
+// _argv[0] : 盤面文字列
+// _argv[1] : 手番player(0/1)  … この局面で動かす側
+// _argv[2] : 自分player(0/1)  … 評価の基準（最大化したい側）
+// _argv[3] : 残り深さ
+// _argv[4] : alpha
+// _argv[5] : beta
+// 戻り値   : 評価値（自分にとっての得点）
+MancalaAI.AlphaBeta
+{
+	_bstr = _argv[0]
+	_turn = _argv[1]
+	_me = _argv[2]
+	_depth = _argv[3]
+	_alpha = _argv[4]
+	_beta = _argv[5]
+
+	// 終端判定
+	if MancalaAI.IsGameOver(_bstr) {
+		MancalaAI.EvalFinal(_bstr, _me)
+		return
+	}
+	if _depth <= 0 {
+		MancalaAI.Evaluate(_bstr, _me)
+		return
+	}
+
+	_moves = MancalaAI.LegalMoves(_bstr, _turn)
+	_nmoves = ARRAYSIZE(_moves)
+	if _nmoves == 0 {
+		// 動けない＝事実上の終局（残石回収）
+		MancalaAI.EvalFinal(_bstr, _me)
+		return
+	}
+
+	_maximizing = (_turn == _me)
+
+	if _maximizing {
+		_best = -1000000
+		for _i=0; _i<_nmoves; _i++ {
+			_nb = MancalaAI.ApplyMove(_bstr, _moves[_i], _turn)
+			_again = MancalaAI._again
+			_np = MancalaAI._nextplayer
+
+			// _val は if の外（forブロック直下）で宣言しておく
+			_val = 0
+			if _again {
+				_val = MancalaAI.AlphaBeta(_nb, _turn, _me, _depth-1, _alpha, _beta)
+			}
+			else {
+				_val = MancalaAI.AlphaBeta(_nb, _np, _me, _depth-1, _alpha, _beta)
+			}
+
+			if _val > _best {
+				_best = _val
+			}
+			if _best > _alpha {
+				_alpha = _best
+			}
+			if _beta <= _alpha {
+				break // βカット
+			}
+		}
+		_best
+		return
+	}
+	else {
+		_best = 1000000
+		for _i=0; _i<_nmoves; _i++ {
+			_nb = MancalaAI.ApplyMove(_bstr, _moves[_i], _turn)
+			_again = MancalaAI._again
+			_np = MancalaAI._nextplayer
+
+			// _val は if の外（forブロック直下）で宣言しておく
+			_val = 0
+			if _again {
+				_val = MancalaAI.AlphaBeta(_nb, _turn, _me, _depth-1, _alpha, _beta)
+			}
+			else {
+				_val = MancalaAI.AlphaBeta(_nb, _np, _me, _depth-1, _alpha, _beta)
+			}
+
+			if _val < _best {
+				_best = _val
+			}
+			if _best < _beta {
+				_beta = _best
+			}
+			if _beta <= _alpha {
+				break // αカット
+			}
+		}
+		_best
+		return
+	}
+}
+
+//========================================
+// 盤面操作（盤面は終始カンマ区切り文字列。要素は _board[i] でアクセス）
+//========================================
+
+// playerのストアインデックス
+MancalaAI.StoreIndex
+{
+	if _argv[0] == 0 {
+		6
+	}
+	else {
+		13
+	}
+}
+
+// playerの相手のストアインデックス（配布時にスキップする穴）
+MancalaAI.OpponentStoreIndex
+{
+	if _argv[0] == 0 {
+		13
+	}
+	else {
+		6
+	}
+}
+
+// playerの合法手（石が1個以上ある自分の小穴）のインデックス配列を返す
+// _argv[0] : 盤面文字列 / _argv[1] : player
+MancalaAI.LegalMoves
+{
+	_board = _argv[0]
+	_player = _argv[1]
+	_moves = IARRAY
+
+	// ローカル変数はブロックスコープのため、if の外で初期化しておく
+	_lo = 0
+	_hi = 5
+	if _player != 0 {
+		_lo = 7
+		_hi = 12
+	}
+
+	for _i=_lo; _i<=_hi; _i++ {
+		if TOINT(_board[_i]) > 0 {
+			_moves ,= _i
+		}
+	}
+	_moves
+}
+
+// 着手を適用した結果（着手後の盤面文字列）を返す。
+// _argv[0] : 盤面文字列 / _argv[1] : 着手する穴 / _argv[2] : player
+// 戻り値 : 着手後の盤面文字列
+// 副作用 : MancalaAI._again      … 連続手番フラグ（1=同じplayerが再度手番）
+//          MancalaAI._nextplayer … 連続でない場合に次に手番を持つplayer
+//          （呼び出し側は戻り値を受け取った直後に必ずローカルへ退避すること）
+MancalaAI.ApplyMove
+{
+	_board = _argv[0] // 盤面文字列。_board[i] で要素アクセス
+	_pit = _argv[1]
+	_player = _argv[2]
+
+	_mystore = MancalaAI.StoreIndex(_player)
+	_skip = MancalaAI.OpponentStoreIndex(_player)
+
+	_hand = TOINT(_board[_pit])
+	_board[_pit] = 0
+
+	_idx = _pit
+	while _hand > 0 {
+		_idx += 1
+		if _idx > 13 {
+			_idx = 0
+		}
+		if _idx == _skip {
+			// 相手のストアはスキップ
+			_idx += 1
+			if _idx > 13 {
+				_idx = 0
+			}
+		}
+		_board[_idx] = TOINT(_board[_idx]) + 1
+		_hand -= 1
+	}
+
+	// 最後に石を置いた穴 = _idx
+	_again = 0
+	if _idx == _mystore {
+		// 自分のストアで終わった -> 連続手番
+		_again = 1
+	}
+	else {
+		// 取り込み判定：自分側の小穴で、置く前が空（=今1個）、かつ正面に石
+		_own = 0
+		if _player == 0 {
+			if (_idx >= 0) && (_idx <= 5) {
+				_own = 1
+			}
+		}
+		else {
+			if (_idx >= 7) && (_idx <= 12) {
+				_own = 1
+			}
+		}
+
+		if _own && (TOINT(_board[_idx]) == 1) {
+			_opp = 12 - _idx // 正面の相手の穴
+			if TOINT(_board[_opp]) > 0 {
+				_board[_mystore] = TOINT(_board[_mystore]) + TOINT(_board[_opp]) + TOINT(_board[_idx])
+				_board[_opp] = 0
+				_board[_idx] = 0
+			}
+		}
+	}
+
+	// 連続手番・次手番playerを副作用として書き出す
+	MancalaAI._again = _again
+	if _player == 0 {
+		MancalaAI._nextplayer = 1
+	}
+	else {
+		MancalaAI._nextplayer = 0
+	}
+
+	_board
+	return
+}
+
+// 終局判定：どちらかの全小穴が空
+// _argv[0] : 盤面文字列
+MancalaAI.IsGameOver
+{
+	_board = _argv[0]
+
+	_first = 0
+	for _i=0; _i<=5; _i++ {
+		_first += TOINT(_board[_i])
+	}
+	if _first == 0 {
+		1
+		return
+	}
+
+	_second = 0
+	for _i=7; _i<=12; _i++ {
+		_second += TOINT(_board[_i])
+	}
+	if _second == 0 {
+		1
+		return
+	}
+
+	0
+}
+
+//========================================
+// 評価関数
+//========================================
+
+// 終局時の評価（残石を各自のストアへ回収して勝敗で大きく評価）
+// _argv[0] : 盤面文字列 / _argv[1] : 自分player
+MancalaAI.EvalFinal
+{
+	_board = _argv[0]
+	_me = _argv[1]
+
+	_first = TOINT(_board[6])
+	for _i=0; _i<=5; _i++ {
+		_first += TOINT(_board[_i])
+	}
+	_second = TOINT(_board[13])
+	for _i=7; _i<=12; _i++ {
+		_second += TOINT(_board[_i])
+	}
+
+	if _me == 0 {
+		_diff = _first - _second
+	}
+	else {
+		_diff = _second - _first
+	}
+
+	// 勝敗を強く反映（探索が確実な勝ちを選ぶように）
+	if _diff > 0 {
+		10000 + _diff
+	}
+	elseif _diff < 0 {
+		-10000 + _diff
+	}
+	else {
+		0
+	}
+}
+
+// 中間局面の静的評価（自分から見た有利度）
+// _argv[0] : 盤面文字列 / _argv[1] : 自分player
+MancalaAI.Evaluate
+{
+	_board = _argv[0]
+	_me = _argv[1]
+
+	_mystore = MancalaAI.StoreIndex(_me)
+	_opstore = MancalaAI.OpponentStoreIndex(_me)
+
+	// 1) ストア差（最重要）
+	_score = (TOINT(_board[_mystore]) - TOINT(_board[_opstore])) * 10
+
+	// 2) 自陣の手駒（盤上の石）も僅かに評価
+	// ローカル変数はブロックスコープのため、if の外で初期化しておく
+	_mylo = 0
+	_myhi = 5
+	_oplo = 7
+	_ophi = 12
+	if _me != 0 {
+		_mylo = 7
+		_myhi = 12
+		_oplo = 0
+		_ophi = 5
+	}
+
+	_myside = 0
+	for _i=_mylo; _i<=_myhi; _i++ {
+		_myside += TOINT(_board[_i])
+	}
+	_opside = 0
+	for _i=_oplo; _i<=_ophi; _i++ {
+		_opside += TOINT(_board[_i])
+	}
+	_score += (_myside - _opside)
+
+	_score
+}

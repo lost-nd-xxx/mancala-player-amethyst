@@ -1,0 +1,11 @@
+.git/
+.github/
+
+updates.txt
+updates2.dau
+
+ghost/master/yaya_variable.cfg
+ghost/master/profile/
+shell/master/profile/
+
+_workspace/

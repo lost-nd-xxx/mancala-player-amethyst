@@ -1,0 +1,6 @@
+charset,UTF-8
+type,ghost
+name,うかマンカラをやるアメジスト
+directory,mancala-player-amethyst
+
+

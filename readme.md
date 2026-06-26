@@ -3,7 +3,9 @@
 ## これはなに？
 
 「うかマンカラ」対応ゴーストの実装サンプルです。
+
 台ゴーストに頼らず、ゴースト側で手を考えるバージョンとして作られています。
+
 実際に遊ぶこともできます。
 
 対応台ゴースト：うかマンカラ - [配布URL](https://github.com/lost-nd-xxx/mancala-board-ghost)
@@ -31,7 +33,8 @@
 
 ## ライセンス
 
-* `ghost/master/dic/normal/` および `shell/` 以下は **CC0**（パブリックドメイン）です。自由に使用・改変・再配布できます。
+* `ghost/master/dic/normal/` および `shell/` 以下は CC0です。自由に使用・改変・再配布できます。
+  * [ライセンス文](https://creativecommons.org/publicdomain/zero/1.0/deed.ja)
 * `ghost/master/` 以下のテンプレート部分（`dic/normal/` を除く）は `licenses/license_konnoyayame.txt`（Unlicense）に従います。
 * `ghost/master/yaya.dll` は `licenses/license_yaya.txt` のライセンスに従います。
 

@@ -4,10 +4,10 @@ file,developer_options.txt787cb14ee97e2db15ea444ae6a475dbasize=245date=2012-1
 file,ghost/master/bidama.ico6de45ce3dca487d944667f6ea0f76c1fsize=17542date=2012-12-21T00:00:00
 file,ghost/master/descript.txt0d69b05d484ce5da540225bf5e3df37fsize=357date=2012-12-21T00:00:00
 file,ghost/master/dic/emerg/yaya_emerg_dic.dic22a28223a5de7a7687ddc3f874900390size=565date=2012-12-21T00:00:00
-file,ghost/master/dic/normal/yaya_bootend.dic2115a06b7bff613c7dbdb184511653e9size=2536date=2012-12-21T00:00:00
+file,ghost/master/dic/normal/yaya_bootend.dic7bb583e17b7b1a436838ab87c94044e8size=2573date=2012-12-21T00:00:00
 file,ghost/master/dic/normal/yaya_etc.dic40e45dd2e6e5ccc4a419428ddcd4e28dsize=1381date=2012-12-21T00:00:00
 file,ghost/master/dic/normal/yaya_mancala_ai.dic8a9332258552653ca801c07e62c22fa3size=10959date=2012-12-21T00:00:00
-file,ghost/master/dic/normal/yaya_menu.dic8b3bd53397e81ca9b29fd502f70fecc0size=12524date=2012-12-21T00:00:00
+file,ghost/master/dic/normal/yaya_menu.dic2270a651a266b18611428764dc5a44e9size=12757date=2012-12-21T00:00:00
 file,ghost/master/dic/normal/yaya_string.dic808867193d68215aa0af92e461b0aaebsize=1225date=2012-12-21T00:00:00
 file,ghost/master/dic/system/_loading_order.txtd2a7d2ad20413596ee9aba0ebdb5543csize=39date=2012-12-21T00:00:00
 file,ghost/master/dic/system/yaya_base/_loading_order.txt9c350c2c9c08f635bff5eaae149af8c8size=103date=2012-12-21T00:00:00
